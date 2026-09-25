@@ -1,0 +1,20 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# CodeIgniter runtime
+application/cache/*
+!application/cache/index.html
+application/logs/*
+!application/logs/index.html
+
+# File upload pengguna (gambar soal, file import) — jangan di-commit
+uploads/bank_soal/*
+!uploads/bank_soal/index.html
+uploads/soalessay/*
+!uploads/soalessay/index.html
+uploads/import/*
+!uploads/import/index.html
+!uploads/import/format/
