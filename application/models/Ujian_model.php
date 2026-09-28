@@ -3,6 +3,82 @@ defined('BASEPATH') or exit('No direct script access allowed');
 
 class Ujian_model extends CI_Model
 {
+    // Kelonggaran setelah tgl_selesai untuk request simpan yang masih di jalan (jaringan lambat)
+    const TOLERANSI_DETIK = 30;
+
+    public function getTesById($id_tes)
+    {
+        return $this->db->get_where('h_ujian', ['id' => $id_tes])->row();
+    }
+
+    public function waktuHabis($tes)
+    {
+        return time() > strtotime($tes->tgl_selesai) + self::TOLERANSI_DETIK;
+    }
+
+    /**
+     * Hitung nilai dari jawaban yang tersimpan di h_ujian.
+     * Rumus sama dengan versi lama: nilai = jumlah benar * rata-rata bobot soal.
+     */
+    public function hitungNilai($id_tes)
+    {
+        $pc_jawaban  = explode(",", $this->getJawaban($id_tes));
+        $jumlah_soal = sizeof($pc_jawaban);
+
+        $jawaban = [];
+        foreach ($pc_jawaban as $jwb) {
+            $pc_dt = explode(":", $jwb);
+            $jawaban[$pc_dt[0]] = isset($pc_dt[1]) ? $pc_dt[1] : '';
+        }
+
+        $kunci = $this->db->select('id_soal, jawaban, bobot')
+            ->where_in('id_soal', array_keys($jawaban))
+            ->get('tb_soal')->result();
+
+        $jumlah_benar = 0;
+        $total_bobot  = 0;
+        foreach ($kunci as $k) {
+            $total_bobot += $k->bobot;
+            if ($jawaban[$k->id_soal] !== '' && $jawaban[$k->id_soal] === $k->jawaban) {
+                $jumlah_benar++;
+            }
+        }
+
+        $nilai_bobot = $total_bobot / $jumlah_soal;
+
+        return [
+            'jml_benar'   => $jumlah_benar,
+            'nilai'       => floor($jumlah_benar * $nilai_bobot),
+            'nilai_bobot' => floor($nilai_bobot),
+        ];
+    }
+
+    public function selesaikanUjian($id_tes)
+    {
+        $d_update = $this->hitungNilai($id_tes);
+        $d_update['status'] = 'N';
+        $this->db->where('id', $id_tes)->update('h_ujian', $d_update);
+        return $d_update;
+    }
+
+    /**
+     * Menilai & menutup ujian yang waktunya sudah habis tetapi tidak pernah di-submit
+     * (browser ditutup, koneksi putus, perangkat mati). Nilai dihitung dari jawaban tersimpan.
+     */
+    public function finalisasiKedaluwarsa($where = [])
+    {
+        $batas = date('Y-m-d H:i:s', time() - self::TOLERANSI_DETIK);
+        $this->db->select('id')->from('h_ujian')->where('status', 'Y')->where('tgl_selesai <', $batas);
+        if (!empty($where)) {
+            $this->db->where($where);
+        }
+        $tes = $this->db->get()->result();
+
+        foreach ($tes as $t) {
+            $this->selesaikanUjian($t->id);
+        }
+        return count($tes);
+    }
 
     public function getDataUjian($id)
     {
@@ -97,9 +173,11 @@ class Ujian_model extends CI_Model
         return $this->db->get()->result();
     }
 
-    public function ambilSoal($pc_urut_soal1, $pc_urut_soal_arr)
+    public function ambilSoal($jawaban_peserta, $pc_urut_soal_arr)
     {
-        $this->db->select("*, {$pc_urut_soal1} AS jawaban");
+        // Kolom jawaban (kunci) ditimpa jawaban peserta agar kunci tidak ikut terkirim ke browser
+        $this->db->select('*');
+        $this->db->select($this->db->escape((string) $jawaban_peserta) . ' AS jawaban', FALSE);
         $this->db->from('tb_soal');
         $this->db->where('id_soal', $pc_urut_soal_arr);
         return $this->db->get()->row();

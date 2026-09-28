@@ -214,6 +214,7 @@ class Ujian extends CI_Controller
 	{
 		$this->akses_mahasiswa();
 
+		$this->ujian->finalisasiKedaluwarsa(['mahasiswa_id' => $this->mhs->id_mahasiswa]);
 		$list = $this->ujian->getListUjian($this->mhs->id_mahasiswa, $this->mhs->kelas_id);
 		$this->output_json($list, false);
 	}
@@ -347,12 +348,20 @@ class Ujian extends CI_Controller
 
 		$q_soal = $h_ujian->row(); //ambil hasil ujian
 
+		// Ujian sudah selesai / waktu habis: nilai dari jawaban tersimpan, jangan tampilkan lembar soal lagi
+		if ($q_soal->status !== 'Y' || $this->ujian->waktuHabis($q_soal)) {
+			if ($q_soal->status === 'Y') {
+				$this->ujian->selesaikanUjian($q_soal->id);
+			}
+			redirect('ujian/list');
+		}
+
 		$urut_soal 		= explode(",", $q_soal->list_jawaban);
 		$soal_urut_ok	= array();
 		for ($i = 0; $i < sizeof($urut_soal); $i++) {
 			$pc_urut_soal	= explode(":", $urut_soal[$i]);
-			$pc_urut_soal1 	= empty($pc_urut_soal[1]) ? "''" : "'{$pc_urut_soal[1]}'";
-			$ambil_soal 	= $this->ujian->ambilSoal($pc_urut_soal1, $pc_urut_soal[0]);
+			$jawaban_peserta = isset($pc_urut_soal[1]) ? $pc_urut_soal[1] : '';
+			$ambil_soal 	= $this->ujian->ambilSoal($jawaban_peserta, $pc_urut_soal[0]);
 			$soal_urut_ok[] = $ambil_soal;
 		}
 
@@ -426,6 +435,7 @@ class Ujian extends CI_Controller
 			'html' 		=> $html,
 			'html2'		=> $html2,
 			'id_tes'	=> $id_tes,
+			'sisa_detik' => max(0, strtotime($detail_tes->tgl_selesai) - time()),
 			'status_essay' => $ujian->status_essay
 		];
 		$this->load->view('_templates/topnav/_header.php', $data);
@@ -433,128 +443,119 @@ class Ujian extends CI_Controller
 		$this->load->view('_templates/topnav/_footer.php');
 	}
 
+	/**
+	 * Ambil data tes (h_ujian) dari id terenkripsi, hanya jika milik mahasiswa yang login.
+	 */
+	private function tes_milik_mahasiswa($id_terenkripsi)
+	{
+		$id_tes = $this->encryption->decrypt($id_terenkripsi);
+		if (!$id_tes || !$this->mhs) {
+			return null;
+		}
+		$tes = $this->ujian->getTesById($id_tes);
+		if (!$tes || $tes->mahasiswa_id != $this->mhs->id_mahasiswa) {
+			return null;
+		}
+		return $tes;
+	}
+
 	public function simpan_satu()
 	{
-		// Decrypt Id
-		$id_tes = $this->input->post('id', true);
-		$id_tes = $this->encryption->decrypt($id_tes);
+		$this->akses_mahasiswa();
 
-		$input 	= $this->input->post(null, true);
-		$list_jawaban 	= "";
-		for ($i = 1; $i < $input['jml_soal']; $i++) {
-			$_tjawab 	= "opsi_" . $i;
-			$_tidsoal 	= "id_soal_" . $i;
-			$_ragu 		= "rg_" . $i;
-			$jawaban_ 	= empty($input[$_tjawab]) ? "" : $input[$_tjawab];
-			$list_jawaban	.= "" . $input[$_tidsoal] . ":" . $jawaban_ . ":" . $input[$_ragu] . ",";
+		$tes = $this->tes_milik_mahasiswa($this->input->post('id', true));
+		if (!$tes) {
+			return $this->output_json(['status' => false, 'msg' => 'Data ujian tidak ditemukan']);
 		}
-		$list_jawaban	= substr($list_jawaban, 0, -1);
-		$d_simpan = [
-			'list_jawaban' => $list_jawaban
-		];
+
+		// Jawaban dikunci setelah ujian selesai atau waktu habis
+		if ($tes->status !== 'Y' || $this->ujian->waktuHabis($tes)) {
+			if ($tes->status === 'Y') {
+				$this->ujian->selesaikanUjian($tes->id);
+			}
+			return $this->output_json(['status' => false, 'selesai' => true, 'msg' => 'Waktu ujian sudah habis. Jawaban yang sudah tersimpan sebelumnya telah dinilai.']);
+		}
+
+		$input = $this->input->post(null, true);
+		$jml_soal = isset($input['jml_soal']) ? (int) $input['jml_soal'] : 0;
+
+		$jawaban_baru = [];
+		for ($i = 1; $i < $jml_soal; $i++) {
+			if (!isset($input['id_soal_' . $i])) {
+				continue;
+			}
+			$jawaban_ = isset($input['opsi_' . $i]) ? strtoupper($input['opsi_' . $i]) : '';
+			$ragu_    = isset($input['rg_' . $i]) && $input['rg_' . $i] === 'Y' ? 'Y' : 'N';
+			$jawaban_baru[$input['id_soal_' . $i]] = [
+				in_array($jawaban_, ['A', 'B', 'C', 'D', 'E'], true) ? $jawaban_ : '',
+				$ragu_
+			];
+		}
+
+		// Susun ulang mengikuti urutan soal milik peserta; id soal di luar daftar diabaikan
+		$list_jawaban = [];
+		foreach (explode(',', $tes->list_jawaban) as $item) {
+			$pc = explode(':', $item);
+			$id_soal = $pc[0];
+			$jawaban_lama = isset($pc[1]) ? $pc[1] : '';
+			list($jawaban_, $ragu_) = isset($jawaban_baru[$id_soal])
+				? $jawaban_baru[$id_soal]
+				: [$jawaban_lama, isset($pc[2]) ? $pc[2] : 'N'];
+			// Pilihan ganda tidak bisa dikosongkan dari UI, jadi jawaban kosong tidak boleh
+			// menimpa jawaban tersimpan (mis. dari tab/perangkat lain yang tampilannya belum ter-update)
+			if ($jawaban_ === '') {
+				$jawaban_ = $jawaban_lama;
+			}
+			$list_jawaban[] = $id_soal . ':' . $jawaban_ . ':' . $ragu_;
+		}
 
 		// Simpan jawaban
-		$this->master->update('h_ujian', $d_simpan, 'id', $id_tes);
+		$this->master->update('h_ujian', ['list_jawaban' => implode(',', $list_jawaban)], 'id', $tes->id);
 		$this->output_json(['status' => true]);
 	}
 
 	public function simpan_akhir()
 	{
-		// Decrypt Id
-		$id_tes = $this->input->post('id', true);
-		$id_tes = $this->encryption->decrypt($id_tes);
+		$this->akses_mahasiswa();
 
-		// Get Jawaban
-		$list_jawaban = $this->ujian->getJawaban($id_tes);
-
-		// Pecah Jawaban
-		$pc_jawaban = explode(",", $list_jawaban);
-
-		$jumlah_benar 	= 0;
-		$jumlah_salah 	= 0;
-		$jumlah_ragu  	= 0;
-		$nilai_bobot 	= 0;
-		$total_bobot	= 0;
-		$jumlah_soal	= sizeof($pc_jawaban);
-		$byobot         = 0;
-		
-
-		foreach ($pc_jawaban as $jwb) {
-			$pc_dt 		= explode(":", $jwb);
-			$id_soal 	= $pc_dt[0];
-			$jawaban 	= $pc_dt[1];
-			$ragu 		= $pc_dt[2];
-
-			$cek_jwb 	= $this->soal->getSoalById($id_soal);
-			$total_bobot = $total_bobot + $cek_jwb->bobot;
-			$byobot     = $cek_jwb->bobot;
-
-			$jawaban == $cek_jwb->jawaban ? $jumlah_benar++ : $jumlah_salah++;
+		$tes = $this->tes_milik_mahasiswa($this->input->post('id', true));
+		if (!$tes) {
+			return $this->output_json(['status' => false, 'msg' => 'Data ujian tidak ditemukan']);
 		}
 
-		// $nilai = ($jumlah_benar / $jumlah_soal)  * 100;
-		//$nilai_bobot = $byobot;
-		$nilai_bobot = ($total_bobot / $jumlah_soal);
-		$nilai = $jumlah_benar * $nilai_bobot;
-		// $nilai_bobot = ($total_bobot / $jumlah_soal)  * 100;
+		// Sudah selesai sebelumnya (mis. timer terpanggil dua kali): jangan dihitung ulang
+		if ($tes->status !== 'Y') {
+			return $this->output_json(['status' => TRUE, 'id' => $tes->id]);
+		}
 
-
-		$d_update = [
-			'jml_benar'		=> $jumlah_benar,
-			'nilai'			=> number_format(floor($nilai), 0),
-			'nilai_bobot'	=> number_format(floor($nilai_bobot), 0),
-			'status'		=> 'N'
-		];
-
-		$this->master->update('h_ujian', $d_update, 'id', $id_tes);
-		$this->output_json(['status' => TRUE, 'data' => $d_update, 'id' => $id_tes]);
+		$d_update = $this->ujian->selesaikanUjian($tes->id);
+		$this->output_json(['status' => TRUE, 'data' => $d_update, 'id' => $tes->id]);
 	}
 
 	public function akumulasikan()
 	{
-		$id_tes = $this->input->get('ujianid');
-		// Get Jawaban
-		$list_jawaban = $this->ujian->getJawaban($id_tes); //mengambil jawaban dari h_ujian
-
-		// Pecah Jawaban
-		$pc_jawaban = explode(",", $list_jawaban);
-
-		$jumlah_benar 	= 0;
-		$jumlah_salah 	= 0;
-		$jumlah_ragu  	= 0;
-		$nilai_bobot 	= 0;
-		$total_bobot	= 0;
-		$jumlah_soal	= sizeof($pc_jawaban);
-		$byobot         = 0;
-
-		foreach ($pc_jawaban as $jwb) {
-			$pc_dt 		= explode(":", $jwb);
-			$id_soal 	= $pc_dt[0];
-			$jawaban 	= $pc_dt[1];
-			$ragu 		= $pc_dt[2];
-
-			$cek_jwb 	= $this->soal->getSoalById($id_soal);
-			$total_bobot = $total_bobot + $cek_jwb->bobot;
-			$byobot     = $cek_jwb->bobot;
-
-			$jawaban == $cek_jwb->jawaban ? $jumlah_benar++ : $jumlah_salah++;
+		if (!$this->ion_auth->is_admin() && !$this->ion_auth->in_group('dosen')) {
+			show_error('Hanya admin dan dosen yang dapat mengakumulasi nilai', 403, 'Akses Terlarang');
 		}
 
-		// $nilai = ($jumlah_benar / $jumlah_soal)  * 100;
-		//$nilai_bobot = $byobot;
-		$nilai_bobot = ($total_bobot / $jumlah_soal);
-		$nilai = $jumlah_benar * $nilai_bobot;
-		
+		$tes = $this->ujian->getTesById((int) $this->input->get('ujianid'));
+		if (!$tes) {
+			return $this->output_json(['status' => false, 'msg' => 'Data ujian tidak ditemukan']);
+		}
 
+		if (!$this->ion_auth->is_admin()) {
+			$dosen = $this->ujian->getIdDosen($this->user->username);
+			$ujian = $this->ujian->getUjianById($tes->ujian_id);
+			if (!$dosen || !$ujian || $ujian->dosen_id != $dosen->id_dosen) {
+				return $this->output_json(['status' => false, 'msg' => 'Ujian ini bukan milik Anda']);
+			}
+		}
 
-		$d_update = [
-			'jml_benar'		=> $jumlah_benar,
-			'nilai'			=> number_format(floor($nilai), 0),
-			'nilai_bobot'	=> number_format(floor($nilai_bobot), 0),
-			// 'status'		=> 'N'
-		];
+		if ($tes->status === 'Y' && !$this->ujian->waktuHabis($tes)) {
+			return $this->output_json(['status' => false, 'msg' => 'Ujian peserta masih berlangsung']);
+		}
 
-		$this->master->update('h_ujian', $d_update, 'id', $id_tes);
-		$this->output_json(['status' => TRUE, 'data' => $d_update, 'id' => $id_tes]);
+		$d_update = $this->ujian->selesaikanUjian($tes->id);
+		$this->output_json(['status' => TRUE, 'data' => $d_update, 'id' => $tes->id]);
 	}
 }

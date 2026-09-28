@@ -24,7 +24,8 @@ if(time() >= $soal->waktu_habis)
             <div class="box-header with-border">
                 <h3 class="box-title"><span class="badge bg-blue">Soal #<span id="soalke"></span> </span></h3>
                 <div class="box-tools pull-right">
-                    <span class="badge bg-red">Sisa Waktu <span class="sisawaktu" data-time="<?=$soal->tgl_selesai?>"></span></span>
+                    <span id="status_simpan" class="badge"></span>
+                    <span class="badge bg-red">Sisa Waktu <span class="sisawaktu" data-time="<?=$soal->tgl_selesai?>" data-sisa="<?=$sisa_detik?>"></span></span>
                     <button type="button" class="btn btn-box-tool" data-widget="collapse"><i class="fa fa-minus"></i>
                     </button>
                 </div>
@@ -53,4 +54,4 @@ if(time() >= $soal->waktu_habis)
     var status_essay    = "<?=$status_essay; ?>";
 </script>
 
-<script src="<?=base_url()?>assets/dist/js/app/ujian/sheet.js"></script>
+<script src="<?=base_url()?>assets/dist/js/app/ujian/sheet.js?v=<?=filemtime(FCPATH . 'assets/dist/js/app/ujian/sheet.js')?>"></script>

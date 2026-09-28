@@ -42,6 +42,7 @@ class HasilUjian extends CI_Controller
 
 	public function NilaiMhs($id)
 	{
+		$this->ujian->finalisasiKedaluwarsa(['ujian_id' => $id]);
 		$this->output_json($this->ujian->HslUjianById($id, true), false);
 	}
 
@@ -59,6 +60,7 @@ class HasilUjian extends CI_Controller
 
 	public function detail($id)
 	{
+		$this->ujian->finalisasiKedaluwarsa(['ujian_id' => $id]);
 		$ujian  = $this->ujian->getUjianById($id);
 		$nilai  = $this->ujian->bandingNilai($id);
 		$tidak_ikut = count($this->ujian->carisiswa($id));
@@ -99,6 +101,7 @@ class HasilUjian extends CI_Controller
 	{
 		$this->load->library('Pdf');
 
+		$this->ujian->finalisasiKedaluwarsa(['ujian_id' => $id]);
 		$ujian = $this->ujian->getUjianById($id);
 		$nilai = $this->ujian->bandingNilai($id);
 		$hasil = $this->ujian->HslUjianByIdPdf($id)->result();
@@ -114,6 +117,7 @@ class HasilUjian extends CI_Controller
 
 	public function cetakexcel($id)
 	{
+		$this->ujian->finalisasiKedaluwarsa(['ujian_id' => $id]);
 		$ujian = $this->ujian->getUjianById($id);
 		$nilai = $this->ujian->bandingNilai($id);
 		$hasil = $this->ujian->HslUjianByIdPdf($id)->result();

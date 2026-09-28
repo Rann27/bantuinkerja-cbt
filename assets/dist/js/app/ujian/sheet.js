@@ -15,6 +15,11 @@ $(document).ready(function () {
 
     $(".step, .back, .selesai").hide();
     $("#widget_1").show();
+
+    // Simpan ke server setiap kali opsi dipilih, bukan hanya saat pindah soal
+    $("#ujian").on("change", "input[type=radio]", function () {
+        simpan();
+    });
 });
 
 function getFormData($form) {
@@ -224,45 +229,95 @@ function simpan_sementara() {
     $("#tampil_jawaban").html('<div id="yes"></div>' + hasil_jawaban);
 }
 
+var retrySimpan = null;
+var ujianDitutup = false;
+var sedangSelesai = false;
+
+function status_simpan(jenis, teks) {
+    $("#status_simpan")
+        .removeClass("bg-green bg-red bg-gray")
+        .addClass(jenis)
+        .text(teks);
+}
+
+function tutup_ujian(pesan) {
+    if (ujianDitutup) return;
+    ujianDitutup = true;
+    alert(pesan);
+    window.location.href = base_url + 'ujian/list';
+}
+
 function simpan() {
     simpan_sementara();
     var form = $("#ujian");
 
-    $.ajax({
+    return $.ajax({
         type: "POST",
         url: base_url + "ujian/simpan_satu",
         data: form.serialize(),
-        dataType: 'json',
-        success: function (data) {
-            // $('.ajax-loading').show();
-            console.log(data);
+        dataType: 'json'
+    }).done(function (data) {
+        if (data.status) {
+            status_simpan("bg-green", "Jawaban tersimpan");
+        } else if (data.selesai) {
+            tutup_ujian(data.msg);
+        } else {
+            status_simpan("bg-red", data.msg || "Gagal menyimpan");
+        }
+    }).fail(function () {
+        // Koneksi putus / sesi habis: beri tahu peserta & coba lagi otomatis
+        status_simpan("bg-red", "Gagal menyimpan! Periksa koneksi / lapor pengawas");
+        if (!retrySimpan) {
+            retrySimpan = setTimeout(function () {
+                retrySimpan = null;
+                simpan();
+            }, 5000);
         }
     });
 }
 
-function selesai() {
-    simpan();
-    ajaxcsrf();
-    $.ajax({
-        type: "POST",
-        url: base_url + "ujian/simpan_akhir",
-        data: { id: id_tes },
-        beforeSend: function () {
-            simpan();
-            // $('.ajax-loading').show();    
-        },
-        success: function (r) {
-            console.log(r);
+function selesai(otomatis) {
+    if (sedangSelesai || ujianDitutup) return;
+    sedangSelesai = true;
+    status_simpan("bg-gray", "Mengirim jawaban...");
+
+    // Jawaban terakhir harus sudah sampai server sebelum ujian diakhiri
+    simpan().always(function () {
+        ajaxcsrf();
+        $.ajax({
+            type: "POST",
+            url: base_url + "ujian/simpan_akhir",
+            data: { id: id_tes },
+            dataType: 'json'
+        }).done(function (r) {
+            if (ujianDitutup) return; // sudah ditutup & dialihkan oleh tutup_ujian()
             if (r.status) {
+                ujianDitutup = true;
+                if (otomatis) {
+                    alert('Waktu ujian telah habis! Jawaban Anda sudah terkirim.');
+                }
                 window.location.href = base_url + 'ujian/list';
+            } else {
+                sedangSelesai = false;
+                alert(r.msg || 'Gagal mengakhiri ujian, silakan coba lagi.');
             }
-        }
+        }).fail(function () {
+            sedangSelesai = false;
+            status_simpan("bg-red", "Gagal mengirim! Periksa koneksi / lapor pengawas");
+            if (otomatis) {
+                // Waktu habis: terus coba kirim sampai berhasil
+                setTimeout(function () {
+                    selesai(true);
+                }, 5000);
+            } else {
+                alert('Gagal mengirim jawaban. Periksa koneksi internet lalu tekan Selesai lagi. Jawaban yang sudah tersimpan tetap aman.');
+            }
+        });
     });
 }
 
 function waktuHabis() {
-    selesai();
-    alert('Waktu ujian telah habis!');
+    selesai(true);
 }
 
 function simpan_akhir() {

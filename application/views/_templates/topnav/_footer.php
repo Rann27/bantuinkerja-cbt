@@ -21,13 +21,30 @@
 <script src="<?= base_url() ?>assets/bower_components/pace/pace.min.js"></script>
 
 <script type="text/javascript">
+	var timerUjian = null;
+	var ujianLengkap = false;
+
 	function sisawaktu(t,ceklengkap) {
-		var time = new Date(t);
-		var n = new Date();
-		var x = setInterval(function() {
-			var now = new Date().getTime();
-			var dis = time.getTime() - now;
-			var h = Math.floor((dis % (1000 * 60 * 60 * 60)) / (1000 * 60 * 60));
+		if (ceklengkap == 'lengkap') {
+			ujianLengkap = true;
+		}
+		// Cukup satu timer per halaman; panggilan berikutnya hanya memperbarui status lengkap
+		if (timerUjian) {
+			return;
+		}
+		// Sisa detik dari server dipakai agar tidak bergantung pada jam/zona waktu perangkat peserta
+		var sisa = parseInt($('.sisawaktu').data('sisa'), 10);
+		var deadline = isNaN(sisa) ? new Date(t).getTime() : new Date().getTime() + sisa * 1000;
+
+		timerUjian = setInterval(function() {
+			var dis = deadline - new Date().getTime();
+			if (dis <= 0) {
+				clearInterval(timerUjian);
+				$('.sisawaktu').html('00:00:00');
+				waktuHabis();
+				return;
+			}
+			var h = Math.floor(dis / (1000 * 60 * 60));
 			var m = Math.floor((dis % (1000 * 60 * 60)) / (1000 * 60));
 			var s = Math.floor((dis % (1000 * 60)) / (1000));
 			h = ("0" + h).slice(-2);
@@ -35,13 +52,10 @@
 			s = ("0" + s).slice(-2);
 			var cd = h + ":" + m + ":" + s;
 			$('.sisawaktu').html(cd);
-			if (m < 59 && ceklengkap=='lengkap') {
+			if (m < 59 && ujianLengkap) {
 				$("#simpanterakhir,.selesai").show();
 			}
-		}, 100);
-		setTimeout(function() {
-			waktuHabis();
-		}, (time.getTime() - n.getTime()));
+		}, 250);
 	}
 
 	function countdown(t) {
