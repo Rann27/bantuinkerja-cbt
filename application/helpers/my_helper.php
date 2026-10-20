@@ -5,10 +5,10 @@ function tampil_media($file,$width="",$height="") {
 	$ret = '';
 
 	$pc_file = explode(".", $file);
-	$eks = end($pc_file);
+	$eks = strtolower(end($pc_file)); // .JPG / .PNG dari kamera HP juga harus tampil
 
 	$eks_video = array("mp4","flv","mpeg");
-	$eks_audio = array("mp3","acc");
+	$eks_audio = array("mp3","acc","wav");
 	$eks_image = array("jpeg","jpg","gif","bmp","png");
 
 

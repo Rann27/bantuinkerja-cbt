@@ -268,20 +268,21 @@ class SoalEssay extends CI_Controller
                     die;
             }
 
-            $spreadsheet = $reader->load($file);
-            $sheetData = $spreadsheet->getActiveSheet()->toArray();
+            // Teks soal dibaca beserta baris baru & formatnya (tebal, miring, sub/superscript), lalu diubah ke HTML aman
+            $this->load->helper('import');
+            $rows = baca_baris_excel($reader->load($file)->getSheet(0), [
+                'dosen_id'   => [1, 'teks'],
+                'matkul_id'  => [2, 'teks'],
+                'file'       => [3, 'teks'],
+                'tipe_file'  => [4, 'teks'],
+                'essay_soal' => [5, 'html'],
+            ]);
             $data = [];
-            for ($i = 1; $i < count($sheetData); $i++) {
-                $data[] = [
-                    'dosen_id'  => $sheetData[$i][1],
-                    'matkul_id' => $sheetData[$i][2],
-                    'file'      => $sheetData[$i][3],
-                    'tipe_file' => $sheetData[$i][4],
-                    'essay_soal' => $sheetData[$i][5],
-                    'created_on' => time(),
-                    'updated_on' => time()
-
-                ];
+            foreach ($rows as $row) {
+                unset($row['_baris']);
+                $row['created_on'] = time();
+                $row['updated_on'] = time();
+                $data[] = $row;
             }
 
             unlink($file);

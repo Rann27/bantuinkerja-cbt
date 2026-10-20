@@ -1,3 +1,17 @@
+<?php
+$pesan = isset($pesan) ? $pesan : [];
+$staging = isset($pesan['staging']) ? $pesan['staging'] : '';
+$staging_files = isset($pesan['staging_files']) ? $pesan['staging_files'] : [];
+
+// Pratinjau media: file baru dari ZIP masih di folder staging, file lama ada di bank soal
+$media_preview = function ($nama) use ($staging, $staging_files) {
+    if ($nama === '' || $nama === null) {
+        return '';
+    }
+    $path = isset($staging_files[$nama]) ? $staging . $nama : 'uploads/bank_soal/' . $nama;
+    return '<div style="max-width:120px">' . tampil_media($path, '100%') . '</div>';
+};
+?>
 <div class="box">
     <div class="box-header with-border">
         <h3 class="box-title"><?= $subjudul ?></h3>
@@ -8,20 +22,30 @@
     </div>
     <div class="box-body">
         <ul class="alert alert-info" style="padding-left: 40px">
-            <li>Silahkan import data dari excel, menggunakan format yang sudah disediakan</li>
-            <li>Data tidak boleh ada yang kosong, harus terisi semua.</li>
+            <li>Import soal dari Excel (<b>.xlsx</b>/.xls/.csv) menggunakan format yang sudah disediakan.</li>
+            <li>Soal boleh lebih dari satu baris (tekan <b>Alt+Enter</b> di dalam sel). Format <b>tebal</b>, <i>miring</i>, <u>garis bawah</u>, subscript (H<sub>2</sub>O) dan superscript (x<sup>2</sup>) dari Excel ikut terbawa.</li>
+            <li><b>Soal bergambar/audio/video:</b> tulis nama file di kolom <b>File</b> (gambar soal) atau <b>File A&ndash;E</b> (gambar opsi), lalu masukkan file Excel dan semua file tersebut ke dalam satu <b>.zip</b> dan import ZIP-nya. Nama file akan diganti otomatis oleh sistem agar tidak bentrok. Format: jpg, png, gif, bmp, mp3, wav, mp4.</li>
+            <li>Kolom <b>Tipe File</b> boleh dikosongkan (terisi otomatis). Jawaban diisi A, B, C, D, atau E.</li>
             <li>Untuk data guru, hanya bisa diisi menggunakan ID Guru dan ID Matpel yang sesuai. <a data-toggle="modal" href="#jurusanId" style="text-decoration:none" class="btn btn-xs btn-primary">Lihat ID</a>.</li>
         </ul>
         <div class="text-center">
-            <a href="<?= base_url('uploads/import/format/soal.xls') ?>" class="btn-default btn">Download Format</a>
+            <a href="<?= base_url('uploads/import/format/soal.xlsx') ?>" class="btn-default btn"><i class="fa fa-file-excel-o"></i> Download Format</a>
+            <a href="<?= base_url('uploads/import/format/contoh_import_soal.zip') ?>" class="btn-default btn"><i class="fa fa-file-archive-o"></i> Contoh ZIP (soal bergambar)</a>
         </div>
         <br>
+        <?php if (!empty($pesan['error'])) : ?>
+            <div class="alert alert-danger"><?= implode('<br>', array_map('html_escape', $pesan['error'])) ?></div>
+        <?php endif; ?>
+        <?php if (!empty($pesan['peringatan'])) : ?>
+            <div class="alert alert-warning"><b>Perhatian:</b><br><?= implode('<br>', array_map('html_escape', $pesan['peringatan'])) ?></div>
+        <?php endif; ?>
         <div class="row">
             <?= form_open_multipart('soal/preview'); ?>
             <label for="file" class="col-sm-offset-1 col-sm-3 text-right">Pilih File</label>
             <div class="col-sm-4">
                 <div class="form-group">
-                    <input type="file" name="upload_file">
+                    <input type="file" name="upload_file" accept=".xlsx,.xls,.csv,.zip">
+                    <p class="help-block">.xlsx / .xls / .csv, atau .zip (Excel + gambar). Maks 50 MB.</p>
                 </div>
             </div>
             <div class="col-sm-3">
@@ -29,9 +53,10 @@
             </div>
             <?= form_close(); ?>
             <div class="col-sm-12">
-                <?php if (isset($_POST['preview'])) : ?>
+                <?php if (isset($import)) : ?>
                     <br>
                     <h4>Preview Data</h4>
+                    <div class="table-responsive">
                     <table class="table table-bordered">
                         <thead>
                             <tr>
@@ -51,60 +76,66 @@
                         <tbody>
                             <?php
                             $status = true;
+                            $jml_error = 0;
                             if (empty($import)) {
-                                echo '<tr><td colspan="2" class="text-center">Data kosong! pastikan anda menggunakan format yang telah disediakan.</td></tr>';
+                                $status = false;
+                                echo '<tr><td colspan="11" class="text-center">Data kosong! pastikan anda menggunakan format yang telah disediakan.</td></tr>';
                             } else {
                                 $no = 1;
                                 foreach ($import as $data) :
                             ?>
-                                    <tr>
-                                        <td><?= $no++; ?></td>
+                                    <tr class="<?= empty($data['error']) ? '' : 'danger'; ?>">
+                                        <td><?= $no++; ?><br><small class="text-muted">baris <?= $data['_baris'] ?></small></td>
                                         <td class="<?= $data['dosen_id'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['dosen_id'] == null ? 'BELUM DIISI' : $data['dosen_id']; ?>
+                                            <?= $data['dosen_id'] == null ? 'BELUM DIISI' : html_escape($data['dosen_id']); ?>
                                         </td>
                                         <td class="<?= $data['matkul_id'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['matkul_id'] == null ? 'BELUM DIISI' : $data['matkul_id'];; ?>
+                                            <?= $data['matkul_id'] == null ? 'BELUM DIISI' : html_escape($data['matkul_id']); ?>
                                         </td>
                                         <td class="<?= $data['bobot'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['bobot'] == null ? 'BELUM DIISI' : $data['bobot'];; ?>
+                                            <?= $data['bobot'] == null ? 'BELUM DIISI' : html_escape($data['bobot']); ?>
                                         </td>
-                                        <td class="<?= $data['soal'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['soal'] == null ? 'BELUM DIISI' : $data['soal'];; ?>
+                                        <td class="<?= $data['soal'] == null && $data['file'] == '' ? 'bg-danger' : ''; ?>">
+                                            <?= $media_preview($data['file']); ?>
+                                            <?= $data['soal']; ?>
+                                            <?php foreach ($data['error'] as $e) : ?>
+                                                <div class="text-danger"><i class="fa fa-exclamation-circle"></i> <?= html_escape($e) ?></div>
+                                            <?php endforeach; ?>
                                         </td>
-                                        <td class="<?= $data['opsi_a'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['opsi_a'] == null ? 'BELUM DIISI' : $data['opsi_a'];; ?>
-                                        </td>
-                                        <td class="<?= $data['opsi_b'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['opsi_b'] == null ? 'BELUM DIISI' : $data['opsi_b'];; ?>
-                                        </td>
-                                        <td class="<?= $data['opsi_c'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['opsi_c'] == null ? 'BELUM DIISI' : $data['opsi_c'];; ?>
-                                        </td>
-                                        <td class="<?= $data['opsi_d'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['opsi_d'] == null ? 'BELUM DIISI' : $data['opsi_d'];; ?>
-                                        </td>
-                                        <td class="<?= $data['opsi_e'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['opsi_e'] == null ? 'BELUM DIISI' : $data['opsi_e'];; ?>
-                                        </td>
-                                        <td class="<?= $data['jawaban'] == null ? 'bg-danger' : ''; ?>">
-                                            <?= $data['jawaban'] == null ? 'BELUM DIISI' : $data['jawaban'];; ?>
+                                        <?php foreach (['a', 'b', 'c', 'd', 'e'] as $o) : ?>
+                                            <td class="<?= $data['opsi_' . $o] == null && $data['file_' . $o] == '' ? 'bg-danger' : ''; ?>">
+                                                <?= $media_preview($data['file_' . $o]); ?>
+                                                <?= $data['opsi_' . $o] == null && $data['file_' . $o] == '' ? 'BELUM DIISI' : $data['opsi_' . $o]; ?>
+                                            </td>
+                                        <?php endforeach; ?>
+                                        <td class="<?= in_array($data['jawaban'], ['A', 'B', 'C', 'D', 'E'], true) ? '' : 'bg-danger'; ?>">
+                                            <?= $data['jawaban'] == null ? 'BELUM DIISI' : html_escape($data['jawaban']); ?>
                                         </td>
                                     </tr>
                             <?php
-                                    if ($data['dosen_id'] == null || $data['matkul_id'] == null) {
+                                    if ($data['dosen_id'] == null || $data['matkul_id'] == null || !empty($data['error'])) {
                                         $status = false;
+                                        $jml_error++;
                                     }
                                 endforeach;
                             }
                             ?>
                         </tbody>
                     </table>
+                    </div>
                     <?php if ($status) : ?>
-
-                        <?= form_open('soal/do_import', null, ['data' => json_encode($import)]); ?>
-                        <button type='submit' class='btn btn-block btn-flat bg-purple'>Import</button>
+                        <?php
+                        // Kolom bantu preview tidak perlu ikut dikirim
+                        $kirim = array_map(function ($d) {
+                            unset($d['error'], $d['_baris']);
+                            return $d;
+                        }, $import);
+                        ?>
+                        <?= form_open('soal/do_import', null, ['data' => json_encode($kirim)]); ?>
+                        <button type='submit' class='btn btn-block btn-flat bg-purple'>Import <?= count($import) ?> Soal</button>
                         <?= form_close(); ?>
-
+                    <?php elseif (!empty($import)) : ?>
+                        <div class="alert alert-danger"><?= $jml_error ?> baris masih bermasalah (ditandai merah). Perbaiki file lalu preview ulang.</div>
                     <?php endif; ?>
                     <br>
                 <?php endif; ?>
@@ -112,6 +143,7 @@
         </div>
     </div>
 </div>
+
 
 <div class="modal fade" id="jurusanId">
     <div class="modal-dialog">
