@@ -59,11 +59,18 @@
 	}
 
 	function countdown(t) {
-		var time = new Date(t);
-		var n = new Date();
+		// Sisa detik dari server (bila ada) agar tidak bergantung jam perangkat peserta
+		var sisa = parseInt($('.countdown').data('sisa'), 10);
+		var target = isNaN(sisa) ? new Date(t).getTime() : new Date().getTime() + sisa * 1000;
 		var x = setInterval(function() {
-			var now = new Date().getTime();
-			var dis = time.getTime() - now;
+			var dis = target - new Date().getTime();
+			// Muat ulang sekali saat waktu habis. Dulu setTimeout(reload, dis) dipasang tiap detik;
+			// dis > ~24,8 hari melebihi batas setTimeout sehingga halaman reload terus-menerus.
+			if (dis <= 0) {
+				clearInterval(x);
+				location.reload();
+				return;
+			}
 			var d = Math.floor(dis / (1000 * 60 * 60 * 24));
 			var h = Math.floor((dis % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
 			var m = Math.floor((dis % (1000 * 60 * 60)) / (1000 * 60));
@@ -74,10 +81,6 @@
 			s = ("0" + s).slice(-2);
 			var cd = d + " Hari, " + h + " Jam, " + m + " Menit, " + s + " Detik ";
 			$('.countdown').html(cd);
-
-			setTimeout(function() {
-				location.reload()
-			}, dis);
 		}, 1000);
 	}
 

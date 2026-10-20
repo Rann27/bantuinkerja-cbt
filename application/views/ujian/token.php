@@ -67,14 +67,14 @@
                         <div class="callout callout-success">
                             <strong><i class="fa fa-clock-o"></i> Ujian akan dimulai pada</strong>
                             <br>
-                            <span class="countdown" data-time="<?=date('Y-m-d H:i:s', strtotime($ujian->tgl_mulai))?>">00 Hari, 00 Jam, 00 Menit, 00 Detik</strong><br/>
+                            <span class="countdown" data-time="<?=date('Y-m-d H:i:s', $mulai)?>" data-sisa="<?=$mulai - $now?>">00 Hari, 00 Jam, 00 Menit, 00 Detik</strong><br/>
                         </div>
                         <?php elseif( $terlambat > $now ) : ?>
                         <button id="btncek" data-id="<?=$ujian->id_ujian?>" class="btn btn-success btn-lg mb-4">
                             <i class="fa fa-pencil"></i> Mulai
                         </button>
                         <div class="callout callout-danger">
-                            <i class="fa fa-clock-o"></i> <strong class="countdown" data-time="<?=date('Y-m-d H:i:s', strtotime($ujian->terlambat))?>">00 Hari, 00 Jam, 00 Menit, 00 Detik</strong><br/>
+                            <i class="fa fa-clock-o"></i> <strong class="countdown" data-time="<?=date('Y-m-d H:i:s', $terlambat)?>" data-sisa="<?=$terlambat - $now?>">00 Hari, 00 Jam, 00 Menit, 00 Detik</strong><br/>
                             Batas waktu menekan tombol mulai.
                         </div>
                         <?php else : ?>
